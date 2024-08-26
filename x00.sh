@@ -13,16 +13,16 @@ reading() { read -p "$(red "$1")" "$2"; }
 export LC_ALL=C
 USERNAME=$(whoami)
 HOSTNAME=$(hostname)
-export UUID=${UUID:-'fc44fe6a-f083-4591-9c03-f8d61dc3907f'}
-export NEZHA_SERVER=${NEZHA_SERVER:-''} 
-export NEZHA_PORT=${NEZHA_PORT:-'5555'}     
-export NEZHA_KEY=${NEZHA_KEY:-''} 
+export UUID=${UUID:-'38b5cb4e-772d-4809-96d1-f7d4c3bb4b0d'}
+export NEZHA_SERVER=${NEZHA_SERVER:-'nz.saggrw.filegear-sg.me'} 
+export NEZHA_PORT=${NEZHA_PORT:-'3042'}     
+export NEZHA_KEY=${NEZHA_KEY:-'NwCWbsGcggbtunLJ8J'} 
 export ARGO_DOMAIN=${ARGO_DOMAIN:-''}   
 export ARGO_AUTH=${ARGO_AUTH:-''}    
 export CFIP=${CFIP:-'www.visa.com.tw'} 
 export CFPORT=${CFPORT:-'443'}          
-export VLESS_PORT=${VLESS_PORT:-'10000'}    
-export ARGO_PORT=${ARGO_PORT:-'20000'}
+export VLESS_PORT=${VLESS_PORT:-'60772'}    
+export ARGO_PORT=${ARGO_PORT:-'42735'}
 
 [[ "$HOSTNAME" == "s1.ct8.pl" ]] && WORKDIR="domains/${USERNAME}.ct8.pl/logs" || WORKDIR="domains/${USERNAME}.serv00.net/logs" && rm -rf $WORKDIR
 [ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
