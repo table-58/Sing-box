@@ -21,6 +21,7 @@ export NEZHA_KEY=${NEZHA_KEY:-''}
 
 [[ "$HOSTNAME" == "s1.ct8.pl" ]] && WORKDIR="domains/${USERNAME}.ct8.pl/logs" || WORKDIR="domains/${USERNAME}.serv00.net/logs"
 [ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
+ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 2>/dev/null
 
 read_vless_port() {
     while true; do
@@ -88,9 +89,7 @@ reading "\n确定继续安装吗？【y/n】: " choice
         read_vless_port
         read_hy2_port
         read_tuic_port
-        download_singbox && wait
-        generate_config
-        run_sb && sleep 3
+        download_and_run_singbox
         get_links
       ;;
     [Nn]) exit 0 ;;
@@ -102,10 +101,10 @@ uninstall_singbox() {
   reading "\n确定要卸载吗？【y/n】: " choice
     case "$choice" in
        [Yy])
-          kill -9 $(ps aux | grep '[w]eb' | awk '{print $2}')
-          kill -9 $(ps aux | grep '[b]ot' | awk '{print $2}')
-          kill -9 $(ps aux | grep '[n]pm' | awk '{print $2}')
+          ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 2>/dev/null
           rm -rf $WORKDIR
+          clear
+          green "已完全卸载"
           ;;
         [Nn]) exit 0 ;;
     	*) red "无效的选择，请输入y或n" && menu ;;
@@ -121,39 +120,70 @@ reading "\n清理所有进程将退出ssh连接，确定继续清理吗？【y/n
 }
 
 # Download Dependency Files
-download_singbox() {
+download_and_run_singbox() {
   ARCH=$(uname -m) && DOWNLOAD_DIR="." && mkdir -p "$DOWNLOAD_DIR" && FILE_INFO=()
   if [ "$ARCH" == "arm" ] || [ "$ARCH" == "arm64" ] || [ "$ARCH" == "aarch64" ]; then
-      FILE_INFO=("https://github.com/eooce/test/releases/download/arm64/sb web""https://github.com/eooce/test/releases/download/ARM/swith npm")
+      FILE_INFO=("https://github.com/eooce/test/releases/download/arm64/sb web" "https://github.com/eooce/test/releases/download/ARM/swith npm")
   elif [ "$ARCH" == "amd64" ] || [ "$ARCH" == "x86_64" ] || [ "$ARCH" == "x86" ]; then
-      FILE_INFO=("https://eooce.2go.us.kg/web web" "https://eooce.2go.us.kg/npm npm")
+      FILE_INFO=("https://github.com/eooce/test/releases/download/freebsd/sb web" "https://github.com/eooce/test/releases/download/freebsd/npm npm")
   else
       echo "Unsupported architecture: $ARCH"
       exit 1
   fi
-  for entry in "${FILE_INFO[@]}"; do
-      URL=$(echo "$entry" | cut -d ' ' -f 1)
-      NEW_FILENAME=$(echo "$entry" | cut -d ' ' -f 2)
-      FILENAME="$DOWNLOAD_DIR/$NEW_FILENAME"
-      if [ -e "$FILENAME" ]; then
-          green "$FILENAME already exists, Skipping download"
-      else
-          wget -q -O "$FILENAME" "$URL"
-          green "Downloading $FILENAME"
-      fi
-      chmod +x $FILENAME
-  done
+declare -A FILE_MAP
+generate_random_name() {
+    local chars=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890
+    local name=""
+    for i in {1..6}; do
+        name="$name${chars:RANDOM%${#chars}:1}"
+    done
+    echo "$name"
 }
 
-# Generating Configuration Files
-generate_config() {
+download_with_fallback() {
+    local URL=$1
+    local NEW_FILENAME=$2
 
-    output=$(./web generate reality-keypair)
-    private_key=$(echo "${output}" | awk '/PrivateKey:/ {print $2}')
-    public_key=$(echo "${output}" | awk '/PublicKey:/ {print $2}')
+    curl -L -sS --max-time 2 -o "$NEW_FILENAME" "$URL" &
+    CURL_PID=$!
+    CURL_START_SIZE=$(stat -c%s "$NEW_FILENAME" 2>/dev/null || echo 0)
+    
+    sleep 1
+    CURL_CURRENT_SIZE=$(stat -c%s "$NEW_FILENAME" 2>/dev/null || echo 0)
+    
+    if [ "$CURL_CURRENT_SIZE" -le "$CURL_START_SIZE" ]; then
+        kill $CURL_PID 2>/dev/null
+        wait $CURL_PID 2>/dev/null
+        wget -q -O "$NEW_FILENAME" "$URL"
+        echo -e "\e[1;32mDownloading $NEW_FILENAME by wget\e[0m"
+    else
+        wait $CURL_PID
+        echo -e "\e[1;32mDownloading $NEW_FILENAME by curl\e[0m"
+    fi
+}
 
-    openssl ecparam -genkey -name prime256v1 -out "private.key"
-    openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=$USERNAME.serv00.net"
+for entry in "${FILE_INFO[@]}"; do
+    URL=$(echo "$entry" | cut -d ' ' -f 1)
+    RANDOM_NAME=$(generate_random_name)
+    NEW_FILENAME="$DOWNLOAD_DIR/$RANDOM_NAME"
+    
+    if [ -e "$NEW_FILENAME" ]; then
+        echo -e "\e[1;32m$NEW_FILENAME already exists, Skipping download\e[0m"
+    else
+        download_with_fallback "$URL" "$NEW_FILENAME"
+    fi
+    
+    chmod +x "$NEW_FILENAME"
+    FILE_MAP[$(echo "$entry" | cut -d ' ' -f 2)]="$NEW_FILENAME"
+done
+wait
+
+output=$(./"$(basename ${FILE_MAP[web]})" generate reality-keypair)
+private_key=$(echo "${output}" | awk '/PrivateKey:/ {print $2}')
+public_key=$(echo "${output}" | awk '/PublicKey:/ {print $2}')
+
+openssl ecparam -genkey -name prime256v1 -out "private.key"
+openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=$USERNAME.serv00.net"
 
   cat > config.json << EOF
 {
@@ -361,11 +391,8 @@ generate_config() {
   }
 }
 EOF
-}
 
-# running files
-run_sb() {
-  if [ -e npm ]; then
+if [ -e "$(basename ${FILE_MAP[npm]})" ]; then
     tlsPorts=("443" "8443" "2096" "2087" "2083" "2053")
     if [[ "${tlsPorts[*]}" =~ "${NEZHA_PORT}" ]]; then
       NEZHA_TLS="--tls"
@@ -374,32 +401,40 @@ run_sb() {
     fi
     if [ -n "$NEZHA_SERVER" ] && [ -n "$NEZHA_PORT" ] && [ -n "$NEZHA_KEY" ]; then
         export TMPDIR=$(pwd)
-        nohup ./npm -s ${NEZHA_SERVER}:${NEZHA_PORT} -p ${NEZHA_KEY} ${NEZHA_TLS} >/dev/null 2>&1 &
-	sleep 2
-        pgrep -x "npm" > /dev/null && green "npm is running" || { red "npm is not running, restarting..."; pkill -x "npm" && nohup ./npm -s "${NEZHA_SERVER}:${NEZHA_PORT}" -p "${NEZHA_KEY}" ${NEZHA_TLS} >/dev/null 2>&1 & sleep 2; purple "npm restarted"; }
+        nohup ./"$(basename ${FILE_MAP[npm]})" -s ${NEZHA_SERVER}:${NEZHA_PORT} -p ${NEZHA_KEY} ${NEZHA_TLS} >/dev/null 2>&1 &
+        sleep 2
+        pgrep -x "$(basename ${FILE_MAP[npm]})" > /dev/null && green "$(basename ${FILE_MAP[npm]}) is running" || { red "$(basename ${FILE_MAP[npm]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[npm]})" && nohup ./"$(basename ${FILE_MAP[npm]})" -s "${NEZHA_SERVER}:${NEZHA_PORT}" -p "${NEZHA_KEY}" ${NEZHA_TLS} >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[npm]}) restarted"; }
     else
-        purple "NEZHA variable is empty,skiping runing"
+        purple "NEZHA variable is empty, skipping running"
     fi
-  fi
+fi
 
-  if [ -e web ]; then
-    nohup ./web run -c config.json >/dev/null 2>&1 &
+if [ -e "$(basename ${FILE_MAP[web]})" ]; then
+    nohup ./"$(basename ${FILE_MAP[web]})" run -c config.json >/dev/null 2>&1 &
     sleep 2
-    pgrep -x "web" > /dev/null && green "web is running" || { red "web is not running, restarting..."; pkill -x "web" && nohup ./web run -c config.json >/dev/null 2>&1 & sleep 2; purple "web restarted"; }
-  fi
-
+    pgrep -x "$(basename ${FILE_MAP[web]})" > /dev/null && green "$(basename ${FILE_MAP[web]}) is running" || { red "$(basename ${FILE_MAP[web]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[web]})" && nohup ./"$(basename ${FILE_MAP[web]})" run -c config.json >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[web]}) restarted"; }
+fi
+sleep 1
+rm -f "$(basename ${FILE_MAP[npm]})" "$(basename ${FILE_MAP[web]})"
 }
 
 get_ip() {
-ip=$(curl -s --max-time 2 ipv4.ip.sb)
-if [ -z "$ip" ]; then
-    if [[ "$HOSTNAME" =~ s[0-9]\.serv00\.com ]]; then
-        ip=${HOSTNAME/s/web}
+  ip=$(curl -s --max-time 2 ipv4.ip.sb)
+  if [ -z "$ip" ]; then
+    ip=$( [[ "$HOSTNAME" =~ s[0-9]\.serv00\.com ]] && echo "${HOSTNAME/s/web}" || echo "$HOSTNAME" )
+  else
+    url="https://www.toolsdaquan.com/toolapi/public/ipchecking/$ip/443"
+    response=$(curl -s --location --max-time 3.5 --request GET "$url" --header 'Referer: https://www.toolsdaquan.com/ipcheck')
+    if [ -z "$response" ] || ! echo "$response" | grep -q '"icmp":"success"'; then
+        accessible=false
     else
-        ip="$HOSTNAME"
+        accessible=true
     fi
-fi
-echo $ip
+    if [ "$accessible" = false ]; then
+        ip=$( [[ "$HOSTNAME" =~ s[0-9]\.serv00\.com ]] && echo "${HOSTNAME/s/web}" || echo "$ip" )
+    fi
+  fi
+  echo "$ip"
 }
 
 get_links(){
@@ -415,10 +450,10 @@ hysteria2://$UUID@$IP:$hy2_port/?sni=www.bing.com&alpn=h3&insecure=1#$ISP
 tuic://$UUID:admin123@$IP:$tuic_port?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#$ISP
 EOF
 cat list.txt
-purple "list.txt saved successfully"
-purple "Running done!"
+purple "\n$WORKDIR/list.txt saved successfully"
+purple "Running done!\n"
 sleep 3 
-rm -rf npm boot.log sb.log core
+rm -rf config.json sb.log core fake_useragent_0.2.0.json
 
 }
 
@@ -426,7 +461,7 @@ rm -rf npm boot.log sb.log core
 menu() {
    clear
    echo ""
-   purple "=== Serv00|ct8老王sing-box一键安装脚本 ===\n"
+   purple "=== Serv00|ct8老王sing-box一键三协议安装脚本 ===\n"
    echo -e "${green}脚本地址：${re}${yellow}https://github.com/eooce/Sing-box${re}\n"
    echo -e "${green}反馈论坛：${re}${yellow}https://bbs.vps8.me${re}\n"
    echo -e "${green}TG反馈群组：${re}${yellow}https://t.me/vps888${re}\n"
