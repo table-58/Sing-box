@@ -19,6 +19,9 @@ server_name="sing-box"
 work_dir="/etc/sing-box"
 config_dir="${work_dir}/config.json"
 client_dir="${work_dir}/url.txt"
+export vless_port=${PORT:-$(shuf -i 1000-65000 -n 1)}
+export CFIP=${CFIP:-'www.visa.com.tw'} 
+export CFPORT=${CFPORT:-'443'} 
 
 # 检查是否为root下运行
 [[ $EUID -ne 0 ]] && red "请在root用户下运行脚本" && exit 1
@@ -165,7 +168,6 @@ install_singbox() {
     chown root:root ${work_dir} && chmod +x ${work_dir}/${server_name} ${work_dir}/argo ${work_dir}/qrencode
 
    # 生成随机端口和密码
-    vless_port=$(shuf -i 1000-65535 -n 1) 
     nginx_port=$(($vless_port + 1)) 
     tuic_port=$(($vless_port + 2))
     hy2_port=$(($vless_port + 3)) 
@@ -220,11 +222,11 @@ cat > "${config_dir}" << EOF
         ],
         "tls": {
             "enabled": true,
-            "server_name": "www.zara.com",
+            "server_name": "www.iij.ad.jp",
             "reality": {
                 "enabled": true,
                 "handshake": {
-                    "server": "www.zara.com",
+                    "server": "www.iij.ad.jp",
                     "server_port": 443
                 },
                 "private_key": "$private_key",
@@ -538,10 +540,10 @@ get_info() {
 
   yellow "\n温馨提醒：如节点不通，请打开V2rayN里的 “跳过证书验证”，或将节点的跳过证书验证设置为“true”\n"
 
-  VMESS="{ \"v\": \"2\", \"ps\": \"${isp}\", \"add\": \"www.visa.com.tw\", \"port\": \"443\", \"id\": \"${uuid}\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"${argodomain}\", \"path\": \"/vmess?ed=2048\", \"tls\": \"tls\", \"sni\": \"${argodomain}\", \"alpn\": \"\", \"fp\": \"randomized\", \"allowlnsecure\": \"flase\"}"
+  VMESS="{ \"v\": \"2\", \"ps\": \"${isp}\", \"add\": \"${CFIP}\", \"port\": \"${CFPORT}\", \"id\": \"${uuid}\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"${argodomain}\", \"path\": \"/vmess?ed=2048\", \"tls\": \"tls\", \"sni\": \"${argodomain}\", \"alpn\": \"\", \"fp\": \"randomized\", \"allowlnsecure\": \"flase\"}"
 
   cat > ${work_dir}/url.txt <<EOF
-vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.zara.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}
+vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}
 
 vmess://$(echo "$VMESS" | base64 -w0)
 
@@ -962,18 +964,20 @@ if [ ${check_singbox} -eq 0 ]; then
             ;;
         3)  
             clear
-            green "\n1. www.ups.com\n\n2. www.svix.com\n\n3. www.cboe.com\n\n4. www.hubspot.com\n"
+            green "\n1. www.joom.com\n\n2. www.stengg.com\n\n3. www.wedgehr.com\n\n4. www.cerebrium.ai\n\n5. www.nazhumi.com\n"
             reading "\n请输入新的Reality伪装域名(可自定义输入,回车留空将使用默认1): " new_sni
                 if [ -z "$new_sni" ]; then    
-                    new_sni="www.ups.com"
+                    new_sni="www.joom.com"
                 elif [[ "$new_sni" == "1" ]]; then
-                    new_sni="www.ups.com"
+                    new_sni="www.joom.com"
                 elif [[ "$new_sni" == "2" ]]; then
-                    new_sni="www.svix.com"
+                    new_sni="www.stengg.com"
                 elif [[ "$new_sni" == "3" ]]; then
-                    new_sni="www.cboe.com"
+                    new_sni="www.wedgehr.com"
                 elif [[ "$new_sni" == "4" ]]; then
-                    new_sni="www.hubspot.com"
+                    new_sni="www.cerebrium.ai"
+	        elif [[ "$new_sni" == "5" ]]; then
+                    new_sni="www.cerebrium.ai"
                 else
                     new_sni="$new_sni"
                 fi
@@ -1131,19 +1135,28 @@ ingress:
   - service: http_status:404
 EOF
 
-                sed -i '/^ExecStart=/c ExecStart=/bin/sh -c "/etc/sing-box/argo tunnel --edge-ip-version auto --config /etc/sing-box/tunnel.yml run 2>&1"' /etc/systemd/system/argo.service
+                if [ -f /etc/alpine-release ]; then
+                    sed -i '/^command_args=/c\command_args="-c '\''/etc/sing-box/argo tunnel --edge-ip-version auto --config /etc/sing-box/tunnel.yml run 2>&1'\''"' /etc/init.d/argo
+                else
+                    sed -i '/^ExecStart=/c ExecStart=/bin/sh -c "/etc/sing-box/argo tunnel --edge-ip-version auto --config /etc/sing-box/tunnel.yml run 2>&1"' /etc/systemd/system/argo.service
+                fi
                 restart_argo
                 sleep 1 
                 change_argo_domain
 
             elif [[ $argo_auth =~ ^[A-Z0-9a-z=]{120,250}$ ]]; then
-                sed -i '/^ExecStart=/c ExecStart=/bin/sh -c "/etc/sing-box/argo tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token '$argo_auth' 2>&1"' /etc/systemd/system/argo.service
+                if [ -f /etc/alpine-release ]; then
+                    sed -i "/^command_args=/c\command_args=\"-c '/etc/sing-box/argo tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token $argo_auth 2>&1'\"" /etc/init.d/argo
+                else
+
+                    sed -i '/^ExecStart=/c ExecStart=/bin/sh -c "/etc/sing-box/argo tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token '$argo_auth' 2>&1"' /etc/systemd/system/argo.service
+                fi
                 restart_argo
                 sleep 1 
                 change_argo_domain
             else
                 yellow "你输入的argo域名或token不匹配，请重新输入"
-                manage_argo
+                manage_argo            
             fi
             ;; 
         5)
@@ -1159,7 +1172,7 @@ EOF
 
         6)  
             if [ -f /etc/alpine-release ]; then
-                if grep -q '--url http://localhost:8001' /etc/init.d/argo; then
+                if grep -Fq -- '--url http://localhost:8001' /etc/init.d/argo; then
                     get_quick_tunnel
                     change_argo_domain 
                 else
@@ -1188,8 +1201,8 @@ fi
 get_quick_tunnel() {
 restart_argo
 yellow "获取临时argo域名中，请稍等...\n"
-sleep 4
-get_argodomain=$(grep -oE 'https://[[:alnum:]+\.-]+\.trycloudflare\.com' "${work_dir}/argo.log" | sed 's@https://@@')
+sleep 5
+get_argodomain=$(grep -oE 'https://[[:alnum:]+\.-]+\.trycloudflare\.com' "/etc/sing-box/argo.log" | sed 's@https://@@')
 green "ArgoDomain：${purple}$get_argodomain${re}"
 ArgoDomain=$get_argodomain
 }
